@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Friday the 13th — Bad Luck Odds Index (U.S.)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- D3 + TopoJSON -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+
+  <style>
+    :root{
+      --bgTop:#070018;
+      --bgBottom:#02010A;
+      --ink:#ffffff;
+
+      --accent:#FF3DB7;   /* magenta */
+      --cool:#6AF2FF;     /* cyan */
+      --cool2:#C3B2FF;    /* lilac */
+
+      /* More extreme map ramp (LOW -> HIGH) */
+      --m0:#F6F4FF;
+      --m1:#DED7FF;
+      --m2:#C3B2FF;
+      --m3:#A07BFF;
+      --m4:#7A3CFF;
+      --m5:#B51FDB;
+      --m6:#FF2D77;
+      --m7:#B80F2A;
+
+      --card:rgba(255,255,255,0.06);
+      --border:rgba(255,255,255,0.14);
+      --shadow:0 18px 55px rgba(0,0,0,0.55);
+
+      --font: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      --mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+
+      --radius:18px;
+    }
+
+    *{ box-sizing:border-box; }
+
+    body{
+      margin:0;
+      font-family:var(--font);
+      color:var(--ink);
+      min-height:100vh;
+      padding:22px 14px 26px;
+      background:
+        radial-gradient(900px 620px at 18% 14%, rgba(122,60,255,0.20), transparent 56%),
+        radial-gradient(900px 620px at 82% 18%, rgba(255,61,183,0.16), transparent 56%),
+        radial-gradient(900px 650px at 55% 88%, rgba(184,15,42,0.12), transparent 60%),
+        linear-gradient(180deg, var(--bgTop), var(--bgBottom));
+      overflow-x:hidden;
+      position:relative;
+    }
+
+    body:before{
+      content:"";
+      position:fixed; inset:0;
+      pointer-events:none;
+      background:
+        radial-gradient(2px 2px at 12% 18%, rgba(255,255,255,0.50) 50%, transparent 52%),
+        radial-gradient(2px 2px at 68% 12%, rgba(255,255,255,0.40) 50%, transparent 52%),
+        radial-gradient(1.6px 1.6px at 44% 26%, rgba(255,255,255,0.40) 50%, transparent 52%),
+        radial-gradient(1.6px 1.6px at 84% 36%, rgba(255,255,255,0.30) 50%, transparent 52%),
+        radial-gradient(1.4px 1.4px at 18% 42%, rgba(255,255,255,0.30) 50%, transparent 52%),
+        radial-gradient(2px 2px at 30% 70%, rgba(255,255,255,0.26) 50%, transparent 52%),
+        radial-gradient(1.4px 1.4px at 76% 74%, rgba(255,255,255,0.26) 50%, transparent 52%),
+        radial-gradient(1.6px 1.6px at 55% 88%, rgba(255,255,255,0.28) 50%, transparent 52%);
+      opacity:0.38;
+      mix-blend-mode:screen;
+    }
+
+    .wrap{ max-width:980px; margin:0 auto; }
+
+    .hero{
+      text-align:center;
+      padding:6px 0 10px;
+      margin-bottom:12px;
+    }
+
+    .title{
+      margin:0;
+      font-weight:950;
+      letter-spacing:0.03em;
+      line-height:0.95;
+      font-size:clamp(40px, 6.2vw, 66px);
+      text-transform:uppercase;
+      background:linear-gradient(180deg, rgba(255,255,255,0.98), rgba(195,178,255,0.92));
+      -webkit-background-clip:text;
+      background-clip:text;
+      color:transparent;
+      text-shadow:0 16px 60px rgba(122,60,255,0.16);
+    }
+
+    .subtitle{
+      margin:10px auto 0;
+      max-width:860px;
+      font-weight:950;
+      letter-spacing:0.02em;
+      font-size:clamp(16px, 2.2vw, 20px);
+      color:rgba(255,255,255,0.92);
+    }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      backdrop-filter: blur(7px);
+    }
+
+    .map-area{ padding:14px 14px 10px; }
+
+    .map-frame{
+      background:rgba(0,0,0,0.28);
+      border:1px solid rgba(255,255,255,0.16);
+      border-radius:16px;
+      overflow:hidden;
+      position:relative;
+    }
+    .map-frame:before{
+      content:"";
+      position:absolute; inset:-28px;
+      background:
+        radial-gradient(520px 260px at 28% 18%, rgba(122,60,255,0.18), transparent 62%),
+        radial-gradient(520px 280px at 72% 85%, rgba(255,61,183,0.14), transparent 64%),
+        radial-gradient(520px 260px at 70% 15%, rgba(106,242,255,0.10), transparent 62%);
+      filter: blur(12px);
+      opacity:0.95;
+      pointer-events:none;
+    }
+
+    svg{ width:100%; height:auto; display:block; position:relative; z-index:1; }
+
+    .state{
+      stroke:rgba(1,1,10,1);
+      stroke-width:6.2;
+      stroke-linejoin:round;
+      stroke-linecap:round;
+      cursor:default;
+      filter: drop-shadow(0 10px 20px rgba(0,0,0,0.25));
+    }
+    .state:hover{
+      stroke:rgba(255,255,255,0.92);
+      filter:
+        drop-shadow(0 0 10px rgba(255,61,183,0.18))
+        drop-shadow(0 0 16px rgba(122,60,255,0.14));
+    }
+    .state-outline{
+      fill:none;
+      stroke:rgba(255,255,255,0.10);
+      stroke-width:0.9;
+      pointer-events:none;
+    }
+
+    .legend{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:12px;
+      padding:10px 14px 6px;
+    }
+    .legend .label{
+      font-size:12px;
+      font-weight:950;
+      letter-spacing:0.06em;
+      text-transform:uppercase;
+      color:rgba(255,255,255,0.86);
+      white-space:nowrap;
+    }
+    .legend .bar{
+      width:min(420px, 74vw);
+      height:14px;
+      border-radius:999px;
+      background:linear-gradient(90deg,
+        var(--m0),var(--m1),var(--m2),var(--m3),var(--m4),var(--m5),var(--m6),var(--m7)
+      );
+      border:1px solid rgba(255,255,255,0.20);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.22);
+    }
+
+    .legend-ticks{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      padding:0 14px 12px;
+      color:rgba(255,255,255,0.72);
+      font:12px/1.2 var(--mono);
+    }
+
+    /* Cyan section label */
+    .bigline{
+      text-align:center;
+      padding:8px 14px 10px;
+      font-weight:950;
+      letter-spacing:0.06em;
+      text-transform:uppercase;
+      color:rgba(106,242,255,0.95);
+      font-size:clamp(13px, 1.9vw, 15px);
+    }
+
+    .lists{
+      padding:0 14px 12px;
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+    }
+    @media (min-width: 760px){
+      .lists{ grid-template-columns:repeat(2, 1fr); }
+    }
+
+    .col{
+      background:rgba(0,0,0,0.12);
+      border:1px solid rgba(255,255,255,0.12);
+      border-radius:14px;
+      padding:8px 10px;
+    }
+
+    .row{
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      gap:10px;
+      padding:8px 6px;
+      border-bottom:1px dashed rgba(255,255,255,0.10);
+      font-size:14px;
+      line-height:1.1;
+    }
+    .row:last-child{ border-bottom:none; }
+
+    /* Cyan names (instead of orange/gold) */
+    .name{
+      font-weight:950;
+      color:rgba(106,242,255,0.92);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .val{
+      font-family:var(--mono);
+      font-variant-numeric:tabular-nums;
+      color:rgba(255,255,255,0.92);
+      font-weight:950;
+      white-space:nowrap;
+    }
+
+    .tooltip{
+      position:absolute;
+      pointer-events:none;
+      display:none;
+      z-index:100;
+      background:rgba(7,0,24,0.94);
+      border:1px solid rgba(255,255,255,0.18);
+      border-radius:14px;
+      padding:10px 12px;
+      box-shadow:0 16px 40px rgba(0,0,0,0.50);
+      max-width:280px;
+      backdrop-filter: blur(8px);
+    }
+    .tooltip strong{
+      display:block;
+      font-weight:950;
+      margin-bottom:4px;
+      color:rgba(255,255,255,0.95);
+    }
+    .tooltip .mono{
+      font-family:var(--mono);
+      font-variant-numeric:tabular-nums;
+      color:rgba(255,61,183,0.95);
+      font-weight:950;
+    }
+    .tooltip .muted{
+      margin-top:4px;
+      font-size:11px;
+      color:rgba(255,255,255,0.70);
+    }
+
+    .footer{
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      background:rgba(0,0,0,0.18);
+      border-top:1px solid rgba(255,255,255,0.10);
+    }
+    .source{
+      font-size:12px;
+      color:rgba(255,255,255,0.86);
+      font-weight:900;
+      letter-spacing:0.04em;
+      text-transform:uppercase;
+      white-space:nowrap;
+    }
+    .source a{
+      color:rgba(106,242,255,0.92);
+      text-decoration:none;
+      border-bottom:1px dotted rgba(106,242,255,0.55);
+      font-weight:950;
+      text-transform:none;
+      letter-spacing:0;
+    }
+    .logo{
+      height:58px;
+      width:auto;
+      display:block;
+      filter: drop-shadow(0 12px 22px rgba(0,0,0,0.45));
+    }
+
+    .method{
+      padding:10px 14px 14px;
+      font-size:11px;
+      line-height:1.35;
+      color:rgba(255,255,255,0.72);
+      border-top:1px solid rgba(255,255,255,0.08);
+      background:rgba(0,0,0,0.10);
+    }
+    .method strong{ color:rgba(255,255,255,0.90); }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1 class="title">Friday the 13th</h1>
+      <div class="subtitle">U.S. states ranked by implied bad luck odds</div>
+    </div>
+
+    <div class="card">
+      <div class="map-area">
+        <div class="map-frame">
+          <svg id="map" viewBox="0 0 975 610" role="img" aria-label="Friday the 13th Bad Luck Odds map"></svg>
+        </div>
+      </div>
+
+      <div class="legend" aria-label="Legend">
+        <div class="label">Lower bad luck odds</div>
+        <div class="bar" aria-hidden="true"></div>
+        <div class="label">Higher bad luck odds</div>
+      </div>
+      <div class="legend-ticks">
+        <div id="minTick">—</div>
+        <div id="maxTick">—</div>
+      </div>
+
+      <div class="bigline">Top 10 states by implied bad luck probability</div>
+      <div class="lists" id="lists"></div>
+
+      <div class="footer">
+        <div class="source">
+          Source:
+          <a href="https://www.canadasportsbetting.ca/news/research/friday-13th-luck-odds-index" target="_blank" rel="noopener">
+            canadasportsbetting.ca
+          </a>
+        </div>
+
+        <img class="logo" src="https://i.postimg.cc/yxWJNtwt/download.png" alt="Canada Sports Betting logo" />
+      </div>
+
+      <div class="method">
+        <strong>Methodology:</strong> We used Google Trends search interest around Friday the 13th and converted it into implied odds for comparison (not prediction).
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tt"></div>
+
+  <script>
+    const badLuckData = {
+      "Utah":                { abbr:"UT", badProb:3.24, oddsX:30.88 },
+      "Alaska":              { abbr:"AK", badProb:2.25, oddsX:44.38 },
+      "North Dakota":        { abbr:"ND", badProb:2.96, oddsX:33.84 },
+      "Idaho":               { abbr:"ID", badProb:3.11, oddsX:32.13 },
+      "Wyoming":             { abbr:"WY", badProb:2.54, oddsX:39.37 },
+      "Vermont":             { abbr:"VT", badProb:3.39, oddsX:29.46 },
+      "Maine":               { abbr:"ME", badProb:3.52, oddsX:28.43 },
+      "Illinois":            { abbr:"IL", badProb:4.12, oddsX:24.30 },
+      "Rhode Island":        { abbr:"RI", badProb:3.88, oddsX:25.75 },
+      "Minnesota":           { abbr:"MN", badProb:4.02, oddsX:24.85 },
+      "New Hampshire":       { abbr:"NH", badProb:3.65, oddsX:27.41 },
+      "Montana":             { abbr:"MT", badProb:3.03, oddsX:32.99 },
+      "Iowa":                { abbr:"IA", badProb:3.57, oddsX:28.03 },
+      "Massachusetts":       { abbr:"MA", badProb:4.45, oddsX:22.48 },
+      "Connecticut":         { abbr:"CT", badProb:4.27, oddsX:23.40 },
+      "District of Columbia":{ abbr:"DC", badProb:2.55, oddsX:39.16 },
+      "Washington":          { abbr:"WA", badProb:3.91, oddsX:25.59 },
+      "Oklahoma":            { abbr:"OK", badProb:3.19, oddsX:31.36 },
+      "New Mexico":          { abbr:"NM", badProb:2.84, oddsX:35.22 },
+      "South Carolina":      { abbr:"SC", badProb:3.99, oddsX:25.06 },
+      "Mississippi":         { abbr:"MS", badProb:3.07, oddsX:32.60 },
+      "Oregon":              { abbr:"OR", badProb:3.44, oddsX:29.06 },
+      "North Carolina":      { abbr:"NC", badProb:4.27, oddsX:23.41 },
+      "Kentucky":            { abbr:"KY", badProb:3.48, oddsX:28.77 },
+      "Michigan":            { abbr:"MI", badProb:3.96, oddsX:25.28 },
+      "Arkansas":            { abbr:"AR", badProb:2.98, oddsX:33.57 },
+      "Virginia":            { abbr:"VA", badProb:4.23, oddsX:23.62 },
+      "Wisconsin":           { abbr:"WI", badProb:3.89, oddsX:25.68 },
+      "California":          { abbr:"CA", badProb:6.00, oddsX:16.67 },
+      "Colorado":            { abbr:"CO", badProb:3.94, oddsX:25.37 },
+      "Louisiana":           { abbr:"LA", badProb:3.53, oddsX:28.36 },
+      "Missouri":            { abbr:"MO", badProb:4.06, oddsX:24.61 },
+      "Pennsylvania":        { abbr:"PA", badProb:4.73, oddsX:21.15 },
+      "Nevada":              { abbr:"NV", badProb:4.02, oddsX:24.90 },
+      "Delaware":            { abbr:"DE", badProb:3.33, oddsX:30.06 },
+      "Kansas":              { abbr:"KS", badProb:3.46, oddsX:28.90 },
+      "Maryland":            { abbr:"MD", badProb:3.74, oddsX:26.75 },
+      "Ohio":                { abbr:"OH", badProb:4.34, oddsX:23.05 },
+      "Hawaii":              { abbr:"HI", badProb:2.95, oddsX:33.88 },
+      "Georgia":             { abbr:"GA", badProb:4.04, oddsX:24.74 },
+      "Nebraska":            { abbr:"NE", badProb:3.14, oddsX:31.86 },
+      "Arizona":             { abbr:"AZ", badProb:4.12, oddsX:24.29 },
+      "Texas":               { abbr:"TX", badProb:5.36, oddsX:18.66 },
+      "West Virginia":       { abbr:"WV", badProb:2.87, oddsX:34.82 },
+      "New Jersey":          { abbr:"NJ", badProb:4.66, oddsX:21.44 },
+      "South Dakota":        { abbr:"SD", badProb:3.45, oddsX:28.96 },
+      "Indiana":             { abbr:"IN", badProb:4.18, oddsX:23.90 },
+      "Alabama":             { abbr:"AL", badProb:3.60, oddsX:27.76 },
+      "New York":            { abbr:"NY", badProb:4.19, oddsX:23.86 },
+      "Tennessee":           { abbr:"TN", badProb:3.71, oddsX:26.96 },
+      "Florida":             { abbr:"FL", badProb:4.87, oddsX:20.55 }
+    };
+
+    const ramp = ["#F6F4FF","#DED7FF","#C3B2FF","#A07BFF","#7A3CFF","#B51FDB","#FF2D77","#B80F2A"];
+    const values = Object.values(badLuckData).map(d => d.badProb);
+    const minV = Math.min(...values);
+    const maxV = Math.max(...values);
+
+    const color = d3.scaleQuantile().domain(values).range(ramp);
+
+    document.getElementById("minTick").textContent = `${minV.toFixed(2)}%`;
+    document.getElementById("maxTick").textContent = `${maxV.toFixed(2)}%`;
+
+    const svg = d3.select("#map");
+    const tooltip = d3.select("#tt");
+
+    const W = 975, H = 610;
+    const projection = d3.geoAlbersUsa().scale(1300).translate([W/2, H/2]);
+    const path = d3.geoPath(projection);
+
+    function esc(s){
+      return String(s).replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[c]));
+    }
+
+    function placeTooltip(event){
+      const rect = tooltip.node().getBoundingClientRect();
+      const pad = 10;
+      let x = event.pageX + 12;
+      let y = event.pageY + 12;
+      if (x + rect.width > window.innerWidth - pad) x = window.innerWidth - rect.width - pad;
+      if (y + rect.height > window.innerHeight - pad) y = window.innerHeight - rect.height - pad;
+      tooltip.style("left", x+"px").style("top", y+"px");
+    }
+
+    function showTip(event, stateName, d){
+      tooltip
+        .style("display","block")
+        .html(
+          `<strong>${esc(stateName)} (${d.abbr})</strong>
+           <div class="mono">${d.badProb.toFixed(2)}% • 1 in ${Math.round(d.oddsX)}</div>
+           <div class="muted">Implied bad luck odds (comparison only)</div>`
+        );
+      placeTooltip(event);
+    }
+
+    function showNoData(event, stateName){
+      tooltip
+        .style("display","block")
+        .html(
+          `<strong>${esc(stateName)}</strong>
+           <div class="muted">No data in this cut</div>`
+        );
+      placeTooltip(event);
+    }
+
+    function hideTip(){ tooltip.style("display","none"); }
+
+    const top10 = Object.entries(badLuckData)
+      .map(([state, v]) => ({ state, ...v }))
+      .sort((a,b)=>b.badProb-a.badProb)
+      .slice(0,10);
+
+    const left = top10.slice(0,5);
+    const right = top10.slice(5,10);
+
+    const lists = document.getElementById("lists");
+    lists.innerHTML = "";
+
+    function makeCol(rows, startIndex){
+      const col = document.createElement("div");
+      col.className = "col";
+      col.innerHTML = rows.map((r, i) => `
+        <div class="row">
+          <div class="name">${startIndex + i}. ${esc(r.state)}</div>
+          <div class="val">${r.badProb.toFixed(2)}% · 1 in ${Math.round(r.oddsX)}</div>
+        </div>
+      `).join("");
+      return col;
+    }
+
+    lists.appendChild(makeCol(left, 1));
+    lists.appendChild(makeCol(right, 6));
+
+    d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us => {
+      const states = topojson.feature(us, us.objects.states).features;
+      svg.attr("viewBox", `0 0 ${W} ${H}`);
+
+      svg.selectAll("path.state")
+        .data(states)
+        .join("path")
+        .attr("class","state")
+        .attr("d", path)
+        .attr("fill", d => {
+          const name = d.properties && d.properties.name;
+          const data = badLuckData[name];
+          return data ? color(data.badProb) : "rgba(255,255,255,0.10)";
+        })
+        .on("mousemove", (event, d) => {
+          const name = d.properties && d.properties.name;
+          const data = badLuckData[name];
+          if(!data) return showNoData(event, name);
+          showTip(event, name, data);
+        })
+        .on("mouseout", hideTip)
+        .on("click", (event, d) => {
+          const name = d.properties && d.properties.name;
+          const data = badLuckData[name];
+          if(!data) return showNoData(event, name);
+          showTip(event, name, data);
+          event.stopPropagation();
+        });
+
+      svg.append("path")
+        .datum(topojson.mesh(us, us.objects.states, (a,b)=>a!==b))
+        .attr("class","state-outline")
+        .attr("d", path);
+
+      document.addEventListener("click", hideTip);
+      document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") hideTip(); });
+    });
+  </script>
+</body>
+</html>
