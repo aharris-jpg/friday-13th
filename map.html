@@ -192,7 +192,6 @@
       font:12px/1.2 var(--mono);
     }
 
-    /* Cyan section label */
     .bigline{
       text-align:center;
       padding:8px 14px 10px;
@@ -203,6 +202,7 @@
       font-size:clamp(13px, 1.9vw, 15px);
     }
 
+    /* LISTS: continuous on mobile, split into 2 cols on desktop */
     .lists{
       padding:0 14px 12px;
       display:grid;
@@ -213,6 +213,7 @@
       .lists{ grid-template-columns:repeat(2, 1fr); }
     }
 
+    /* If we render a single column, reduce the visual “break” entirely */
     .col{
       background:rgba(0,0,0,0.12);
       border:1px solid rgba(255,255,255,0.12);
@@ -232,7 +233,6 @@
     }
     .row:last-child{ border-bottom:none; }
 
-    /* Cyan names (instead of orange/gold) */
     .name{
       font-weight:950;
       color:rgba(106,242,255,0.92);
@@ -485,26 +485,54 @@
       .sort((a,b)=>b.badProb-a.badProb)
       .slice(0,10);
 
-    const left = top10.slice(0,5);
-    const right = top10.slice(5,10);
-
     const lists = document.getElementById("lists");
     lists.innerHTML = "";
 
-    function makeCol(rows, startIndex){
-      const col = document.createElement("div");
-      col.className = "col";
-      col.innerHTML = rows.map((r, i) => `
+    function makeRows(rows, startIndex){
+      return rows.map((r, i) => `
         <div class="row">
           <div class="name">${startIndex + i}. ${esc(r.state)}</div>
           <div class="val">${r.badProb.toFixed(2)}% · 1 in ${Math.round(r.oddsX)}</div>
         </div>
       `).join("");
-      return col;
     }
 
-    lists.appendChild(makeCol(left, 1));
-    lists.appendChild(makeCol(right, 6));
+    // MOBILE: single continuous list
+    // DESKTOP: two cols (1–5 / 6–10)
+    function renderTop10(){
+      const isDesktop = window.matchMedia("(min-width: 760px)").matches;
+
+      lists.innerHTML = "";
+
+      if(!isDesktop){
+        const col = document.createElement("div");
+        col.className = "col";
+        col.innerHTML = makeRows(top10, 1);
+        lists.appendChild(col);
+        return;
+      }
+
+      const left = top10.slice(0,5);
+      const right = top10.slice(5,10);
+
+      const col1 = document.createElement("div");
+      col1.className = "col";
+      col1.innerHTML = makeRows(left, 1);
+
+      const col2 = document.createElement("div");
+      col2.className = "col";
+      col2.innerHTML = makeRows(right, 6);
+
+      lists.appendChild(col1);
+      lists.appendChild(col2);
+    }
+
+    renderTop10();
+    window.addEventListener("resize", () => {
+      // avoid unnecessary reflow spam
+      clearTimeout(window.__rT);
+      window.__rT = setTimeout(renderTop10, 120);
+    });
 
     d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us => {
       const states = topojson.feature(us, us.objects.states).features;
@@ -546,3 +574,4 @@
   </script>
 </body>
 </html>
+
